@@ -1,8 +1,7 @@
-const STORAGE_KEY = "personal-finance-manager-v2";
-const LEGACY_KEYS = ["personal-finance-manager-v1", "pfm-data", "finance-manager"];
-
-// Clear any legacy storage keys with demo data from previous versions
-LEGACY_KEYS.forEach((key) => localStorage.removeItem(key));
+const STORAGE_KEY = "personal-finance-manager-v3";
+// Clear all legacy keys so stale seeded data never blocks fresh categories
+["personal-finance-manager-v1", "personal-finance-manager-v2", "pfm-data", "finance-manager"]
+  .forEach((key) => localStorage.removeItem(key));
 const GST_RATE = 0.18;
 
 const categoryColors = [
@@ -14,6 +13,24 @@ const categoryColors = [
   "#84cc16",
   "#eab308",
   "#ec4899",
+];
+
+const DEFAULT_CATEGORIES = [
+  // Income
+  { name: "Salary",        type: "income",  color: "#14b8a6" },
+  { name: "Freelance",     type: "income",  color: "#84cc16" },
+  { name: "Business",      type: "income",  color: "#38bdf8" },
+  { name: "Investment",    type: "income",  color: "#8b5cf6" },
+  { name: "Gift",          type: "income",  color: "#ec4899" },
+  // Expense
+  { name: "Food",          type: "expense", color: "#f97316" },
+  { name: "Fuel",          type: "expense", color: "#eab308" },
+  { name: "Transport",     type: "expense", color: "#38bdf8" },
+  { name: "Shopping",      type: "expense", color: "#ec4899" },
+  { name: "Bills",         type: "expense", color: "#f43f5e" },
+  { name: "Education",     type: "expense", color: "#8b5cf6" },
+  { name: "Healthcare",    type: "expense", color: "#84cc16" },
+  { name: "Entertainment", type: "expense", color: "#a78bfa" },
 ];
 
 const navItems = [
@@ -108,34 +125,49 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function seedDefaultCategories() {
+  DEFAULT_CATEGORIES.forEach((cat) => {
+    const alreadyExists = state.categories.some(
+      (c) => c.name.toLowerCase() === cat.name.toLowerCase() && c.type === cat.type,
+    );
+    if (!alreadyExists) {
+      state.categories.push({ id: uid(), ...cat });
+    }
+  });
+}
+
 function loadData() {
   const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) return;
 
-  try {
-    const parsed = JSON.parse(saved);
-    // Only restore real user-entered records — no demo seeding
-    if (Array.isArray(parsed.transactions)) {
-      state.transactions = parsed.transactions.filter(
-        (t) => t && t.id && t.title && t.amount != null,
-      );
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed.transactions)) {
+        state.transactions = parsed.transactions.filter(
+          (t) => t && t.id && t.title && t.amount != null,
+        );
+      }
+      if (Array.isArray(parsed.categories)) {
+        state.categories = parsed.categories.filter(
+          (c) => c && c.id && c.name && c.type,
+        );
+      }
+      if (Array.isArray(parsed.chatMessages)) {
+        state.chatMessages = parsed.chatMessages.filter(
+          (m) => m && m.role && m.text,
+        );
+      }
+      if (typeof parsed.selectedTemplateId === "string") {
+        state.selectedTemplateId = parsed.selectedTemplateId;
+      }
+    } catch {
+      localStorage.removeItem(STORAGE_KEY);
     }
-    if (Array.isArray(parsed.categories)) {
-      state.categories = parsed.categories.filter(
-        (c) => c && c.id && c.name && c.type,
-      );
-    }
-    if (Array.isArray(parsed.chatMessages)) {
-      state.chatMessages = parsed.chatMessages.filter(
-        (m) => m && m.role && m.text,
-      );
-    }
-    if (typeof parsed.selectedTemplateId === "string") {
-      state.selectedTemplateId = parsed.selectedTemplateId;
-    }
-  } catch {
-    localStorage.removeItem(STORAGE_KEY);
   }
+
+  // Always ensure all default categories exist (first launch + upgrades)
+  seedDefaultCategories();
+  saveData();
 }
 
 function saveData() {
@@ -767,14 +799,16 @@ function renderTransactionForm(type) {
           <div class="field">
             <label for="category">Category</label>
             <select id="category" name="category" required>
-              ${categories.length ? "" : '<option value="">Add a category first</option>'}
-              ${categories
-                .map(
-                  (category) => `
-                    <option value="${escapeHtml(category.name)}" ${category.name === formData.category ? "selected" : ""}>${escapeHtml(category.name)}</option>
-                  `,
-                )
-                .join("")}
+              ${categories.length === 0
+                ? '<option value="">No categories found</option>'
+                : categories.map((category, index) =>
+                    `<option value="${escapeHtml(category.name)}" ${
+                      category.name === formData.category || (!formData.category && index === 0)
+                        ? "selected"
+                        : ""
+                    }>${escapeHtml(category.name)}</option>`
+                  ).join("")
+              }
             </select>
           </div>
           <div class="field">
